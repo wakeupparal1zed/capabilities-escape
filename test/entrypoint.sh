@@ -1,0 +1,60 @@
+#!/bin/bash
+set -euo pipefail
+
+CTF_USER=${CTF_USER:-ctf}
+CTF_PASS=${CTF_PASS:-ctf123}
+FLAG=${FLAG}
+CTF_HOME=/home/${CTF_USER}
+SSH_PORT=${SSH_PORT:-22}
+
+if ! id -u "$CTF_USER" >/dev/null 2>&1; then
+  useradd -m -d "$CTF_HOME" -s /bin/bash "$CTF_USER"
+fi
+
+echo "${CTF_USER}:${CTF_PASS}" | chpasswd
+
+if grep -qE '^#?Port ' /etc/ssh/sshd_config; then
+  sed -ri "s/^#?Port .*/Port ${SSH_PORT}/" /etc/ssh/sshd_config
+else
+  echo "Port ${SSH_PORT}" >> /etc/ssh/sshd_config
+fi
+
+# Flag is root-only
+FLAG_PATH=/root/flag.txt
+printf "%s\n" "$FLAG" > "$FLAG_PATH"
+chown root:root "$FLAG_PATH"
+chmod 600 "$FLAG_PATH"
+
+# Lock down common escalation paths
+if [ -f /bin/su ]; then chmod 700 /bin/su; fi
+if [ -f /usr/bin/su ]; then chmod 700 /usr/bin/su; fi
+find / -xdev -type f -perm -4000 2>/dev/null | while read -r f; do
+  chmod u-s "$f" 2>/dev/null || true
+done
+
+# Give a single binary a single capability
+CAP_BIN=$(readlink -f /usr/bin/python3)
+setcap cap_setuid+ep "$CAP_BIN"
+
+# Remove any other file capabilities to keep the path clean
+getcap -r / 2>/dev/null | awk '{print $1}' | while read -r f; do
+  if [ "$f" != "$CAP_BIN" ]; then
+    setcap -r "$f" 2>/dev/null || true
+  fi
+done
+
+cat >/etc/motd <<'MOTD'
+Добро пожаловать!
+
+Цель: найти бинарь с capabilities и использовать его, чтобы прочитать флаг.
+Подсказка: getcap -r /
+MOTD
+
+cat >"$CTF_HOME"/WELCOME.txt <<'EOF2'
+Подсказка: найдите файл с capability cap_setuid.
+EOF2
+chown ${CTF_USER}:${CTF_USER} "$CTF_HOME"/WELCOME.txt
+
+unset FLAG
+
+exec /usr/sbin/sshd -D -e
