@@ -49,7 +49,7 @@ cat >/etc/motd <<'MOTD'
 MOTD
 
 cat >"$CTF_HOME"/WELCOME.txt <<'EOF2'
-Подсказка: найдите файл с capability cap_setuid.
+
 EOF2
 chown ${CTF_USER}:${CTF_USER} "$CTF_HOME"/WELCOME.txt
 
